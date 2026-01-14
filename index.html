@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Outil EPS</title>
+
+<style>
+body{ margin:0; font-family:Arial,sans-serif; background:linear-gradient(135deg,#bbdefb,#e3f2fd);}
+header{ background:#1b5e20; color:white; padding:15px; text-align:center; font-size:22px; font-weight:bold;}
+.subtitle{ text-align:center; font-size:16px; color:#ffeb3b; font-weight:500; margin-top:4px;}
+.container{ padding:15px; }
+.card{ background:white; border-radius:18px; padding:15px; margin-bottom:15px; box-shadow:0 6px 12px rgba(0,0,0,0.2);}
+button{ border:none; padding:12px; border-radius:12px; margin:5px 0; font-weight:bold; width:100%; cursor:pointer; }
+.btn-green{ background:#4caf50; color:white; }
+.btn-blue{ background:#2196f3; color:white; }
+.btn-red{ background:#f44336; color:white; }
+.btn-orange{ background:#ff9800; }
+.btn-purple{ background:#9c27b0; color:white; }
+input{ padding:10px; border-radius:10px; border:1px solid #ccc; width:100%; margin-bottom:8px; }
+.hidden{ display:none; }
+canvas{ background:white; border-radius:15px; margin-top:10px; }
+.category{ padding:12px; border-radius:14px; margin:12px 0; box-shadow:0 4px 8px rgba(0,0,0,0.15);}
+.cat-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;}
+.criteria-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:8px;}
+.crit-btn{ position:relative; padding:12px 32px 12px 10px; border-radius:12px; font-weight:bold; border:none; width:100%;}
+.crit-pos{ background:#4caf50; color:white; }
+.crit-neg{ background:#e53935; color:white; }
+.trash{ position:absolute; right:6px; top:50%; transform:translateY(-50%); background:rgba(255,255,255,0.85); border:none; border-radius:50%; width:22px; height:22px; font-size:13px; cursor:pointer;}
+#selectStudents table{ width:100%; border-collapse: collapse;}
+#selectStudents th,#selectStudents td{ padding:6px; text-align:left; border-bottom:1px solid #ccc;}
+.class-item{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;}
+.class-buttons{ display:flex; gap:8px;}
+</style>
+</head>
+
+<body>
+
+<header>🏫 Outil numérique EPS</header>
+<div class="subtitle">Cet outil numérique a été réalisé par Nathan RAVELET</div>
+
+<div class="container">
+
+<!-- ACCUEIL -->
+<div id="home" class="card">
+<h3>📚 Mes classes</h3>
+<input id="newClassName" placeholder="Nom de la classe">
+<button class="btn-green" onclick="createClass()">➕ Créer classe</button>
+<div id="classList"></div>
+<button class="btn-red" onclick="resetAll()">♻ Réinitialiser tout</button>
+<hr>
+<h4>💾 Sauvegarde</h4>
+<button class="btn-blue" onclick="exportJSON()">⬇ Exporter JSON</button>
+<input type="file" id="importFile" accept=".json">
+<button class="btn-green" onclick="importJSON()">⬆ Importer JSON</button>
+</div>
+
+<!-- CLASSE -->
+<div id="classPage" class="card hidden">
+<h3 id="classTitle"></h3>
+
+<input id="studentName" placeholder="Nom élève">
+<button class="btn-green" onclick="addStudent()">➕ Ajouter élève</button>
+
+<p>Nombre d'élèves : <span id="studentCount">0</span></p>
+
+<h4>👥 Liste des élèves</h4>
+<div id="studentsList"></div>
+
+<!-- ✅ NOUVEAU BOUTON -->
+<button class="btn-red" onclick="resetScores()">🧹 Réinitialiser les points de la classe</button>
+
+<h4>✅ Sélection</h4>
+<button class="btn-blue" onclick="selectAll()">✔ Tout sélectionner / désélectionner</button>
+<div id="selectStudents"></div>
+
+<label>📅 Date :</label>
+<input type="date" id="sessionDate">
+
+<h4>📂 Catégories & critères</h4>
+<input id="newCatName" placeholder="Nouvelle catégorie">
+<button class="btn-green" onclick="addCategory()">➕ Ajouter catégorie</button>
+<div id="categoriesZone"></div>
+
+<button class="btn-purple" onclick="showHistory()">📊 Historique</button>
+<button class="btn-orange" onclick="backHome()">⬅ Retour</button>
+</div>
+
+<!-- HISTORIQUE -->
+<div id="historyPage" class="card hidden">
+<h3>📈 Évolution</h3>
+<canvas id="chart" width="330" height="220"></canvas>
+
+<h4>🏆 Classement</h4>
+<div id="ranking"></div>
+
+<button class="btn-orange" onclick="backClass()">⬅ Retour classe</button>
+</div>
+
+<!-- FICHE ÉLÈVE -->
+<div id="studentPage" class="card hidden">
+<h3 id="studentNameTitle"></h3>
+<h4>📅 Historique détaillé</h4>
+<div id="studentHistory"></div>
+<button class="btn-orange" onclick="backToClass()">⬅ Retour classe</button>
+</div>
+
+</div>
+
+<script>
+let data = JSON.parse(localStorage.getItem("epsData")) || {classes:[]};
+let currentClass = null;
+let currentStudentIndex = null;
+const catColors = ["#e3f2fd","#fce4ec","#e8f5e9","#fff3e0","#ede7f6","#f3e5f5"];
+
+function save(){ localStorage.setItem("epsData",JSON.stringify(data)); }
+
+/* ---------- CLASSES ---------- */
+function refreshClasses(){
+  classList.innerHTML = "";
+  data.classes.forEach((c,i)=>{
+    classList.innerHTML += `
+      <div class="class-item">
+        <span>📘 ${c.name}</span>
+        <div class="class-buttons">
+          <button class="btn-blue" onclick="openClass(${i})">Ouvrir</button>
+          <button class="btn-red" onclick="deleteClass(${i})">❌</button>
+        </div>
+      </div>`;
+  });
+}
+refreshClasses();
+
+function createClass(){
+  let name = newClassName.value.trim();
+  if(!name) return;
+  data.classes.push({name,students:[],categories:[]});
+  save();
+  refreshClasses();
+  newClassName.value="";
+}
+
+function deleteClass(i){
+  if(confirm("Supprimer cette classe ?")){
+    data.classes.splice(i,1);
+    save();
+    refreshClasses();
+  }
+}
+
+function openClass(i){
+  currentClass = i;
+  home.classList.add("hidden");
+  classPage.classList.remove("hidden");
+  classTitle.innerText = "Classe : " + data.classes[i].name;
+  refreshStudents();
+  renderCategories();
+}
+
+function backHome(){
+  classPage.classList.add("hidden");
+  home.classList.remove("hidden");
+}
+
+/* ---------- ÉLÈVES ---------- */
+function addStudent(){
+  let name = studentName.value.trim();
+  if(!name) return;
+  data.classes[currentClass].students.push({name,score:0,history:[]});
+  save();
+  refreshStudents();
+  studentName.value="";
+}
+
+function refreshStudents(){
+  let c = data.classes[currentClass];
+  studentsList.innerHTML="";
+  selectStudents.innerHTML="";
+  studentCount.innerText = c.students.length;
+
+  c.students.forEach((s,i)=>{
+    studentsList.innerHTML += `
+      👤 <span style="cursor:pointer;text-decoration:underline;" onclick="openStudent(${i})">${s.name}</span>
+      — ${s.score} pts
+      <button class="btn-red" style="width:auto;padding:6px" onclick="deleteStudent(${i})">🗑</button><br>`;
+  });
+
+  let table = '<table><tr><th>✓</th><th>Nom</th></tr>';
+  c.students.forEach((s,i)=>{
+    table += `<tr><td><input type="checkbox" id="s${i}"></td><td>${s.name}</td></tr>`;
+  });
+  table += '</table>';
+  selectStudents.innerHTML = table;
+}
+
+function deleteStudent(i){
+  if(confirm("Supprimer cet élève ?")){
+    data.classes[currentClass].students.splice(i,1);
+    save();
+    refreshStudents();
+  }
+}
+
+function selectAll(){
+  let c = data.classes[currentClass];
+  let allChecked = c.students.every((s,i)=>document.getElementById("s"+i).checked);
+  c.students.forEach((s,i)=>{
+    document.getElementById("s"+i).checked = !allChecked;
+  });
+}
+
+/* 🧹 RESET POINTS CLASSE */
+function resetScores(){
+  if(!confirm("Réinitialiser TOUS les points et historiques de la classe ?")) return;
+  let cls = data.classes[currentClass];
+  cls.students.forEach(s=>{
+    s.score = 0;
+    s.history = [];
+  });
+  save();
+  refreshStudents();
+  alert("Points réinitialisés ✅");
+}
+
+/* ---------- CATÉGORIES ---------- */
+function addCategory(){
+  let name = newCatName.value.trim();
+  if(!name) return;
+  data.classes[currentClass].categories.push({name,criteria:[]});
+  newCatName.value="";
+  save();
+  renderCategories();
+}
+
+function renderCategories(){
+  categoriesZone.innerHTML="";
+  let cls = data.classes[currentClass];
+  cls.categories.forEach((cat,ci)=>{
+    let bg = catColors[ci%catColors.length];
+    let html = `
+      <div class="category" style="background:${bg}">
+        <div class="cat-header">
+          <strong>${cat.name}</strong>
+          <button class="btn-red" style="width:auto;padding:6px" onclick="deleteCategory(${ci})">🗑</button>
+        </div>
+        <div class="criteria-grid">`;
+
+    cat.criteria.forEach((cr,ri)=>{
+      let clsBtn = cr.points>=0?"crit-pos":"crit-neg";
+      let sign = cr.points>0?"+":"";
+      html += `
+        <button class="crit-btn ${clsBtn}" 
+        onclick="applyPoints(${cr.points},'${cr.label.replace(/'/g,"\\'")}')">
+        ${cr.label} (${sign}${cr.points})
+        <span class="trash" onclick="event.stopPropagation(); deleteCriteria(${ci},${ri})">🗑</span>
+        </button>`;
+    });
+
+    html += `</div>
+      <button class="btn-blue" onclick="addCriteria(${ci})">➕ Ajouter critère</button>
+      </div>`;
+    categoriesZone.innerHTML += html;
+  });
+}
+
+function deleteCategory(ci){
+  if(confirm("Supprimer catégorie ?")){
+    data.classes[currentClass].categories.splice(ci,1);
+    save();
+    renderCategories();
+  }
+}
+
+function addCriteria(ci){
+  let label = prompt("Nom du critère :");
+  if(!label) return;
+  let pts = parseInt(prompt("Points (ex: 2 ou -1)"));
+  if(isNaN(pts)) return;
+  data.classes[currentClass].categories[ci].criteria.push({label,points:pts});
+  save();
+  renderCategories();
+}
+
+function deleteCriteria(ci,ri){
+  if(confirm("Supprimer critère ?")){
+    data.classes[currentClass].categories[ci].criteria.splice(ri,1);
+    save();
+    renderCategories();
+  }
+}
+
+/* ---------- POINTS ---------- */
+function applyPoints(pts,label){
+  let date = sessionDate.value;
+  if(!date){ alert("Choisis une date"); return; }
+
+  let cls = data.classes[currentClass];
+  cls.students.forEach((s,i)=>{
+    if(document.getElementById("s"+i).checked){
+      s.score += pts;
+      s.history.push({
+        date,
+        score: s.score,
+        criteriaApplied:[label]
+      });
+    }
+  });
+  save();
+  refreshStudents();
+}
+
+/* ---------- HISTORIQUE ---------- */
+function showHistory(){
+  classPage.classList.add("hidden");
+  historyPage.classList.remove("hidden");
+  drawChart();
+  showRanking();
+}
+
+function backClass(){
+  historyPage.classList.add("hidden");
+  classPage.classList.remove("hidden");
+}
+
+function drawChart(){
+  let ctx = chart.getContext("2d");
+  ctx.clearRect(0,0,chart.width,chart.height);
+  let cls = data.classes[currentClass];
+  let max = 5;
+  cls.students.forEach(s=>s.history.forEach(h=>max=Math.max(max,h.score)));
+  cls.students.forEach((s,idx)=>{
+    ctx.beginPath();
+    ctx.strokeStyle = `hsl(${idx*70},70%,40%)`;
+    s.history.forEach((h,i)=>{
+      let x = 20 + i*40;
+      let y = 200 - (h.score/max)*180;
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    ctx.fillText(s.name,220,20+idx*14);
+  });
+}
+
+function showRanking(){
+  ranking.innerHTML="";
+  let arr=[...data.classes[currentClass].students].sort((a,b)=>b.score-a.score);
+  arr.forEach((s,i)=>{
+    ranking.innerHTML += `🏅 ${i+1}. ${s.name} — ${s.score} pts<br>`;
+  });
+}
+
+/* ---------- FICHE ÉLÈVE ---------- */
+function openStudent(i){
+  currentStudentIndex = i;
+  let student = data.classes[currentClass].students[i];
+  studentNameTitle.innerText = `📋 Fiche de ${student.name}`;
+  let html = "";
+  if(student.history.length===0){
+    html="<p>Aucun historique.</p>";
+  } else {
+    html="<table><tr><th>Date</th><th>Score</th><th>Critère</th></tr>";
+    student.history.forEach(h=>{
+      html += `<tr><td>${h.date}</td><td>${h.score}</td><td>${h.criteriaApplied.join(", ")}</td></tr>`;
+    });
+    html+="</table>";
+  }
+  studentHistory.innerHTML = html;
+  classPage.classList.add("hidden");
+  studentPage.classList.remove("hidden");
+}
+
+function backToClass(){
+  studentPage.classList.add("hidden");
+  classPage.classList.remove("hidden");
+}
+
+/* ---------- RESET GLOBAL ---------- */
+function resetAll(){
+  if(confirm("Tout supprimer ?")){
+    localStorage.clear();
+    location.reload();
+  }
+}
+
+/* ---------- EXPORT / IMPORT ---------- */
+function exportJSON(){
+  const blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "epsData.json";
+  a.click();
+}
+
+function importJSON(){
+  const file = importFile.files[0];
+  if(!file) return alert("Choisir un fichier JSON");
+  const reader = new FileReader();
+  reader.onload = e=>{
+    try{
+      data = JSON.parse(e.target.result);
+      save();
+      refreshClasses();
+      alert("Import réussi ✅");
+    }catch{
+      alert("Fichier invalide ❌");
+    }
+  };
+  reader.readAsText(file);
+}
+</script>
+
+</body>
+</html>
